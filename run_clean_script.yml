@@ -1,0 +1,7 @@
+- name: Run cleaning script
+  hosts: all
+  vars: 
+    tools_path: "C:\\Tools\\"  
+  tasks:
+    - name: Run powershell script
+      script: "files/Cleanup.ps1"

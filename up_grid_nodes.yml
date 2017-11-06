@@ -1,0 +1,183 @@
+#################################################################################################################
+########################## Common ###############################################################################
+#################################################################################################################
+- name: Install chrome driver & selenium server
+  hosts: all
+  vars: 
+    chromedriver_version: 2.33
+    chromedriver_download_dir:  "%TEMP%\\download_chromedriver_{{ chromedriver_version }}"
+    chromedriver_folder: "C:\\ChromeDriver\\"
+    chromedriver_path: "{{ chromedriver_folder }}{{ chromedriver_version }}\\chromedriver.exe"
+    
+    selenium_branch_version: 3.6 # TODO combine in a single var by splitting it
+    selenium_server_version: 3.6.0
+    selenium_server_download_dir: "%TEMP%\\download_selenium_server_{{ selenium_server_version }}"
+    selenium_server_folder: "C:\\SeleniumServer\\"
+    selenium_server_path: "{{ selenium_server_folder }}selenium-server-standalone-{{ selenium_server_version }}.jar"
+
+    ps_exec_path: "C:\\Tools\\"
+    ps_exec_location: "{{ ps_exec_path }}PsExec.exe"
+
+  tasks: 
+    ############################# TODO add logic to install Google Chrome & Java. Only check atm #################
+
+    - name: Get chrome installed 
+      win_reg_stat:
+          path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe
+      register: current_version
+
+    - name: Check chrome installed
+      assert:
+        that: 
+           - current_version.exists
+        msg: "Google Chrome is not installed!"
+
+    #- name: Check java installed
+    #  win_shell: java -version
+    #  register:  java_results
+
+    #- name: Check java jre
+    #  assert:
+    #    that:
+    #      - not java_results.failed
+    #    msg: "Java is not installed!"
+
+    ############################# Chrome Driver check & install ##################################################
+
+    - name: Check chromedriver exists
+      win_stat: 
+        path:   "{{ chromedriver_path }}"
+      register: stat_file
+
+    - name: Download chrome driver
+      win_get_url:
+        url:  "http://chromedriver.storage.googleapis.com/{{ chromedriver_version }}/chromedriver_win32.zip"
+        dest: "{{ chromedriver_download_dir }}.zip"
+      when: stat_file.stat.exists == False
+
+    - name: Unzip chrome driver
+      win_unzip:
+        src:  "{{ chromedriver_download_dir }}.zip"
+        dest: "{{ chromedriver_folder }}{{ chromedriver_version }}"
+      when: stat_file.stat.exists == False
+
+    ############################ Selenium server standalone ######################################################
+
+    - name: Check selenium-server-standalone exists
+      win_stat: 
+        path: "{{ selenium_server_path }}"
+      register: stat_file
+
+    - name: Create directory structure for selenium server
+      win_file:
+        path:  "{{ selenium_server_folder }}"
+        state: directory
+      when: stat_file.stat.exists == False
+
+    - name: Download selenium server
+      win_get_url:
+        url:  "http://selenium-release.storage.googleapis.com/{{selenium_branch_version}}/selenium-server-standalone-{{selenium_server_version}}.jar"
+        dest: "{{ selenium_server_path }}"
+      when:   stat_file.stat.exists == False
+
+    ########################## PsExec ###########################################################################
+    # We need this to execute stuff in main session. 
+    - name: Check PsExec executable present.
+      win_stat: 
+        path:   "{{ ps_exec_location }}"
+      register: ps_exec_file
+
+    - name: Create directory structure for Tools
+      win_file:
+        path:  "{{ ps_exec_path }}"
+        state: directory
+      when: ps_exec_file.stat.exists == False
+
+    - name: Download PsExec
+      win_get_url:
+        url:  "https://download.sysinternals.com/files/PSTools.zip"
+        dest: "{{ ps_exec_path }}PSTools.zip"
+      when: ps_exec_file.stat.exists == False
+
+    - name: Unzip PsExec Tools
+      win_unzip:
+        src:  "{{ ps_exec_path }}PSTools.zip"
+        dest: "{{ ps_exec_path }}"
+      when: ps_exec_file.stat.exists == False
+
+    # Share variable to hub / nodes etc
+    - name: Set PsExec location variable
+      set_fact:
+        ps_exec_location:     "{{ ps_exec_location }}"
+        chromedriver_path:    "{{ chromedriver_path }}"
+        selenium_server_path: "{{ selenium_server_path }}"
+        ps_exec_path:         "{{ ps_exec_path }}"
+
+###############################################################################################
+######################### Selenium Hub ########################################################
+###############################################################################################
+- name: Run selenium hub
+  hosts: hub
+  tasks:     
+
+    ####################### Start Selenium HUB ########################################
+    - name: Register as Selenium HUB
+      win_command: "\"{{ ps_exec_location }}\" -accepteula -nobanner -d -i 1 -s
+                   java.exe -Dwebdriver.chrome.driver=\"{{ chromedriver_path }}\" 
+                   -jar \"{{ selenium_server_path }}\" -role hub -port \"{{ selenium_hub_port }}\" 
+                   -browserTimeout \"{{ browserTimeout }}\""
+      ignore_errors: True
+      register: ps_out
+
+    - name: Check process for Selenium HUB started
+      fail: msg="Failed to start selenium"
+      when: "'started' not in ps_out.stderr"
+
+    ####################### Smoke test for HUB #######################################
+    - name: Wait until Selenium HUB is up & running
+      win_uri:
+         url: "http://{{ inventory_hostname }}:{{ selenium_hub_port }}"
+         method: GET
+      register: result
+      until: result['status_code'] | default(0) == 200  
+      retries: 10
+      delay: 5
+
+###############################################################################################
+########################### Selenium Nodes ####################################################
+###############################################################################################
+- name: Run selenium node
+  hosts: nodes
+  tasks:
+
+    - name: Read selenium grid url
+      set_fact: 
+        selenium_grid_url: "http://{{ groups.hub[0] }}:{{ hostvars[groups.hub[0]].selenium_hub_port }}"
+
+    - name: "Checking selenium grid with url:"
+      debug:
+        msg: "Grid URL: {{ selenium_grid_url }}. This node URL: {{ inventory_hostname }}"
+
+    ####################### Make sure HUB running #############################################
+    #- name: Waiting until Selenium HUB is up & running to register node
+    #  win_uri:
+    #     url: "{{ selenium_grid_url }}"
+    #     method: GET
+    #  register: res
+    #  until: res['status_code'] | default(0) == 200 
+    #  retries: 15
+    #  delay: 5
+
+    ####################### Start node ########################################################
+    - name: Register as Selenium NODE
+      win_command: "\"{{ ps_exec_location }}\" -accepteula -nobanner -d -i 1 -s
+                   java.exe -Dwebdriver.chrome.driver=\"{{ chromedriver_path }}\" 
+                   -jar \"{{ selenium_server_path }}\" -role node 
+                   -hub \"{{ selenium_grid_url }}/grid/register\" -maxSession 5" 
+
+      ignore_errors: True
+      register: ps_out
+
+    - name: Check process for Selenium NODE started
+      fail: msg="Failed to start selenium"
+      when: "'started' not in ps_out.stderr"

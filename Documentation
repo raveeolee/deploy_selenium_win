@@ -1,0 +1,14 @@
+## Synopsis
+Script to manage selenium grid & nodes infrastracture.
+
+## Reboot all inventory
+
+ansible all -i host -m win_reboot --forks=8
+
+## Start inventory
+
+ansible-playbook -i host up_grid_nodes.yml
+
+## Ping
+
+ansible all -i host -m win_ping

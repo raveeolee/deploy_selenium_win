@@ -1,0 +1,21 @@
+[nodes] # List of nodes
+192.168.56.101
+
+[hub] # Selenium hub
+192.168.56.101 selenium_hub_port=4444 browserTimeout=300
+
+[selenium:children]
+hub
+nodes
+
+# Requirements. Please refer to: http://docs.ansible.com/ansible/latest/intro_windows.html
+# - WinRm service should be installed & allowed by firewall
+# - User exists on remote system & has permission run WinRm service
+[selenium:vars] # Ideally this should encoded with ansible vault
+ansible_ssh_user=test
+ansible_ssh_pass=2017teslaisawesome
+ansible_ssh_port=5986
+ansible_connection=winrm
+ansible_winrm_server_cert_validation=ignore
+ansible_winrm_operation_timeout_sec=60
+ansible_winrm_read_timeout_sec=70
