@@ -9,6 +9,8 @@
 .Synopsis
    Aautomate cleaning up a C: drive with low disk space
 .DESCRIPTION
+   https://gallery.technet.microsoft.com/scriptcenter/Clean-up-your-C-Drive-bc7bb3ed
+   https://www.theovernightadmin.com/2013/10/cleanup-c-drive-with-windows-powershell.html  
    Cleans the C: drive's Window Temperary files, Windows SoftwareDistribution folder, `
    the local users Temperary folder, IIS logs(if applicable) and empties the recycling bin. `
    All deleted files will go into a log transcript in C:\Windows\Temp\. By default this `
